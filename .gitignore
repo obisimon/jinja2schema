@@ -6,3 +6,4 @@ docs/build
 .venv/
 Pipfile
 Pipfile.lock
+.flake8
