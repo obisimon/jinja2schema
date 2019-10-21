@@ -7,3 +7,4 @@ docs/build
 Pipfile
 Pipfile.lock
 .flake8
+*.ipynb

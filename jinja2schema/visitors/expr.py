@@ -275,6 +275,20 @@ def visit_getattr(ast, ctx, macroses=None, config=default_config):
     return visit_expr(ast.node, context, macroses, config=config)
 
 
+@visits_expr(nodes.NSRef)
+def visit_nsref(ast, ctx, macroses=None, config=default_config):
+    print(f'visit_nsref {ast} {ctx}')
+    context = Context(
+        ctx=ctx,
+        predicted_struct=Dictionary.from_ast(
+            ast,
+            {ast.attr: ctx.get_predicted_struct(label=ast.attr)},
+            order_nr=config.ORDER_OBJECT.get_next(),
+        ),
+    )
+    return visit_expr(ast.node, context, macroses, config=config)
+
+
 @visits_expr(nodes.Getitem)
 def visit_getitem(ast, ctx, macroses=None, config=default_config):
     arg = ast.arg
@@ -542,7 +556,7 @@ def visit_call(ast, ctx, macroses=None, config=default_config):
                 )
                 struct = merge(struct, arg_struct)
             return String(), struct
-        elif ast.node.name == "dict":
+        elif ast.node.name == "dict" or ast.node.name == "namespace":
             ctx.meet(Dictionary(), ast)
             if ast.args:
                 raise InvalidExpression(ast, "dict accepts only keyword arguments")
@@ -557,7 +571,9 @@ def visit_call(ast, ctx, macroses=None, config=default_config):
             raise InvalidExpression(
                 ast, '"{0}" call is not supported'.format(ast.node.name)
             )
+
     elif isinstance(ast.node, nodes.Getattr):
+        print(f"ast: {ast} ctx: {ctx}, macroses: {macroses}, config: {config}")
         if ast.node.attr in ("keys", "iterkeys", "values", "itervalues", "items"):
             ctx.meet(List(Unknown()), ast)
             rtype, struct = visit_expr(

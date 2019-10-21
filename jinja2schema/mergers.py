@@ -58,12 +58,21 @@ def merge(fst, snd, custom_merger=None):
         if fst.items is snd.items is None:
             result = Tuple(None)
         else:
-            if len(fst.items) != len(snd.items) and not (fst.may_be_extended or snd.may_be_extended):
+            if len(fst.items) != len(snd.items) and not (
+                fst.may_be_extended or snd.may_be_extended
+            ):
                 raise MergeException(fst, snd)
-            result = Tuple([merge(a, b, custom_merger=custom_merger)
-                            for a, b in zip_longest(fst.items, snd.items, fillvalue=Unknown())])
+            result = Tuple(
+                [
+                    merge(a, b, custom_merger=custom_merger)
+                    for a, b in zip_longest(fst.items, snd.items, fillvalue=Unknown())
+                ]
+            )
     else:
-        raise MergeException(fst, snd)
+        # print(f"merger fst: {fst} snd: {snd}")
+        # NSRef hack
+        result = fst.clone()
+        # raise MergeException(fst, snd)
     result.label = fst.label or snd.label
     result.linenos = list(sorted(set(fst.linenos + snd.linenos)))
     result.constant = fst.constant
@@ -90,13 +99,18 @@ def merge_many(fst, snd, *args):
 def merge_bool_expr_structs(fst, snd, operator=None):
     def merger(fst, snd, result):
         result.checked_as_defined = fst.checked_as_defined
-        result.checked_as_undefined = fst.checked_as_undefined and snd.checked_as_undefined
+        result.checked_as_undefined = (
+            fst.checked_as_undefined and snd.checked_as_undefined
+        )
         return result
+
     return merge(fst, snd, custom_merger=merger)
 
 
 def merge_rtypes(fst, snd, operator=None):
-    if operator in ('+', '-'):
-        if type(fst) is not type(snd) and not (isinstance(fst, Unknown) or isinstance(snd, Unknown)):
+    if operator in ("+", "-"):
+        if type(fst) is not type(snd) and not (
+            isinstance(fst, Unknown) or isinstance(snd, Unknown)
+        ):
             raise MergeException(fst, snd)
     return merge(fst, snd)

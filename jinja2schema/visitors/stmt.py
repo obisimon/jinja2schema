@@ -28,13 +28,17 @@ def visits_stmt(node_cls):
 
     :param node_cls: subclass of :class:`jinja2.nodes.Stmt`
     """
+
     def decorator(func):
         stmt_visitors[node_cls] = func
+
         @functools.wraps(func)
         def wrapped_func(ast, macroses=None, config=default_config, child_blocks=None):
             assert isinstance(ast, node_cls)
             return func(ast, macroses, config, child_blocks)
+
         return wrapped_func
+
     return decorator
 
 
@@ -50,35 +54,56 @@ def visit_stmt(ast, macroses=None, config=default_config, child_blocks=None):
             if isinstance(ast, node_cls):
                 visitor = visitor_
     if not visitor:
-        raise Exception('stmt visitor for {0} is not found'.format(type(ast)))
+        raise Exception("stmt visitor for {0} is not found".format(type(ast)))
     return visitor(ast, macroses, config)
 
 
 @visits_stmt(nodes.For)
 def visit_for(ast, macroses=None, config=default_config, child_blocks=None):
     with config.ORDER_OBJECT.sub_counter():
-        body_struct = visit_many(ast.body, macroses, config, predicted_struct_cls=Scalar)
+        body_struct = visit_many(
+            ast.body, macroses, config, predicted_struct_cls=Scalar
+        )
     with config.ORDER_OBJECT.sub_counter():
-        else_struct = visit_many(ast.else_, macroses, config, predicted_struct_cls=Scalar)
+        else_struct = visit_many(
+            ast.else_, macroses, config, predicted_struct_cls=Scalar
+        )
 
-    if 'loop' in body_struct:
+    if "loop" in body_struct:
         # exclude a special `loop` variable from the body structure
-        del body_struct['loop']
+        del body_struct["loop"]
 
     if isinstance(ast.target, nodes.Tuple):
         target_struct = Tuple.from_ast(
             ast.target,
-            [body_struct.pop(item.name, Unknown.from_ast(ast.target, order_nr=config.ORDER_OBJECT.get_next()))
-             for item in ast.target.items], order_nr=config.ORDER_OBJECT.get_next())
+            [
+                body_struct.pop(
+                    item.name,
+                    Unknown.from_ast(
+                        ast.target, order_nr=config.ORDER_OBJECT.get_next()
+                    ),
+                )
+                for item in ast.target.items
+            ],
+            order_nr=config.ORDER_OBJECT.get_next(),
+        )
     else:
-        target_struct = body_struct.pop(ast.target.name, Unknown.from_ast(ast, order_nr=config.ORDER_OBJECT.get_next()))
+        target_struct = body_struct.pop(
+            ast.target.name,
+            Unknown.from_ast(ast, order_nr=config.ORDER_OBJECT.get_next()),
+        )
 
     iter_rtype, iter_struct = visit_expr(
         ast.iter,
         Context(
             return_struct_cls=Unknown,
-            predicted_struct=List.from_ast(ast, target_struct, order_nr=config.ORDER_OBJECT.get_next())),
-        macroses, config)
+            predicted_struct=List.from_ast(
+                ast, target_struct, order_nr=config.ORDER_OBJECT.get_next()
+            ),
+        ),
+        macroses,
+        config,
+    )
 
     merge(iter_rtype, List(target_struct))
 
@@ -88,13 +113,22 @@ def visit_for(ast, macroses=None, config=default_config, child_blocks=None):
 @visits_stmt(nodes.If)
 def visit_if(ast, macroses=None, config=default_config, child_blocks=None):
     if config.BOOLEAN_CONDITIONS:
-        test_predicted_struct = Boolean.from_ast(ast.test, order_nr=config.ORDER_OBJECT.get_next())
+        test_predicted_struct = Boolean.from_ast(
+            ast.test, order_nr=config.ORDER_OBJECT.get_next()
+        )
     else:
-        test_predicted_struct = Unknown.from_ast(ast.test, order_nr=config.ORDER_OBJECT.get_next())
+        test_predicted_struct = Unknown.from_ast(
+            ast.test, order_nr=config.ORDER_OBJECT.get_next()
+        )
     test_rtype, test_struct = visit_expr(
-            ast.test, Context(predicted_struct=test_predicted_struct), macroses, config)
+        ast.test, Context(predicted_struct=test_predicted_struct), macroses, config
+    )
     if_struct = visit_many(ast.body, macroses, config, predicted_struct_cls=Scalar)
-    else_struct = visit_many(ast.else_, macroses, config, predicted_struct_cls=Scalar) if ast.else_ else Dictionary()
+    else_struct = (
+        visit_many(ast.else_, macroses, config, predicted_struct_cls=Scalar)
+        if ast.else_
+        else Dictionary()
+    )
     struct = merge_many(test_struct, if_struct, else_struct)
 
     for var_name, var_struct in iteritems(test_struct):
@@ -103,52 +137,90 @@ def visit_if(ast, macroses=None, config=default_config, child_blocks=None):
                 lookup_struct = if_struct
             elif var_struct.checked_as_defined:
                 lookup_struct = else_struct
-            struct[var_name].may_be_defined = (lookup_struct and
-                                               var_name in lookup_struct and
-                                               lookup_struct[var_name].constant)
-            struct[var_name].checked_as_defined = test_struct[var_name].checked_as_defined and (
-                not lookup_struct or not var_name in lookup_struct or lookup_struct[var_name].constant
+            struct[var_name].may_be_defined = (
+                lookup_struct
+                and var_name in lookup_struct
+                and lookup_struct[var_name].constant
             )
-            struct[var_name].checked_as_undefined = test_struct[var_name].checked_as_undefined and (
-                not lookup_struct or not var_name in lookup_struct or lookup_struct[var_name].constant
+            struct[var_name].checked_as_defined = test_struct[
+                var_name
+            ].checked_as_defined and (
+                not lookup_struct
+                or not var_name in lookup_struct
+                or lookup_struct[var_name].constant
+            )
+            struct[var_name].checked_as_undefined = test_struct[
+                var_name
+            ].checked_as_undefined and (
+                not lookup_struct
+                or not var_name in lookup_struct
+                or lookup_struct[var_name].constant
             )
     return struct
 
 
 @visits_stmt(nodes.Assign)
 def visit_assign(ast, macroses=None, config=default_config, child_blocks=None):
+    # print(f"assign global: {ast} target: {ast.target} node: {ast.node}")
+
     struct = Dictionary()
-    if (isinstance(ast.target, nodes.Name) or
-            (isinstance(ast.target, nodes.Tuple) and isinstance(ast.node, nodes.Tuple))):
+    if (
+        isinstance(ast.target, nodes.Name)
+        or (isinstance(ast.target, nodes.Tuple) and isinstance(ast.node, nodes.Tuple))
+        or isinstance(ast.target, nodes.NSRef)
+    ):
         variables = []
-        if not (isinstance(ast.target, nodes.Tuple) and isinstance(ast.node, nodes.Tuple)):
-            variables.append((ast.target.name, ast.node))
+        if not (
+            (isinstance(ast.target, nodes.Tuple) and isinstance(ast.node, nodes.Tuple))
+        ):
+            if isinstance(ast.target, nodes.NSRef):
+                # print(f"assign ast nsref: {ast} target: {ast.target} node: {ast.node}")
+                variables.append((ast.target.name, ast.node))
+            else:
+                # print(f"assign ast other: {ast} target: {ast.target} node: {ast.node}")
+                variables.append((ast.target.name, ast.node))
         else:
+            # print(f"target and node are tuple")
             if len(ast.target.items) != len(ast.node.items):
-                raise InvalidExpression(ast, 'number of items in left side is different '
-                                             'from right side')
+                raise InvalidExpression(
+                    ast, "number of items in left side is different " "from right side"
+                )
             for name_ast, var_ast in izip(ast.target.items, ast.node.items):
                 variables.append((name_ast.name, var_ast))
+
         for var_name, var_ast in variables:
-            var_rtype, var_struct = visit_expr(var_ast, Context(
-                predicted_struct=Unknown.from_ast(var_ast, order_nr=config.ORDER_OBJECT.get_next())), macroses, config)
+            var_rtype, var_struct = visit_expr(
+                var_ast,
+                Context(
+                    predicted_struct=Unknown.from_ast(
+                        var_ast, order_nr=config.ORDER_OBJECT.get_next()
+                    )
+                ),
+                macroses,
+                config,
+            )
             var_rtype.constant = True
             var_rtype.label = var_name
-            struct = merge_many(struct, var_struct, Dictionary({
-                var_name: var_rtype,
-            }))
+            struct = merge_many(struct, var_struct, Dictionary({var_name: var_rtype}))
         return struct
     elif isinstance(ast.target, nodes.Tuple):
+        # print(f"target is tuple")
         tuple_items = []
         for name_ast in ast.target.items:
-            var_struct = Unknown.from_ast(name_ast, constant=True, order_nr=config.ORDER_OBJECT.get_next())
+            var_struct = Unknown.from_ast(
+                name_ast, constant=True, order_nr=config.ORDER_OBJECT.get_next()
+            )
             tuple_items.append(var_struct)
             struct = merge(struct, Dictionary({name_ast.name: var_struct}))
         var_rtype, var_struct = visit_expr(
-            ast.node, Context(return_struct_cls=Unknown, predicted_struct=Tuple(tuple_items)), macroses, config)
+            ast.node,
+            Context(return_struct_cls=Unknown, predicted_struct=Tuple(tuple_items)),
+            macroses,
+            config,
+        )
         return merge(struct, var_struct)
     else:
-        raise InvalidExpression(ast, 'unsupported assignment')
+        raise InvalidExpression(ast, "unsupported assignment")
 
 
 @visits_stmt(nodes.Output)
@@ -163,18 +235,26 @@ def visit_macro(ast, macroses=None, config=default_config, child_blocks=None):
     kwargs = []
     body_struct = visit_many(ast.body, macroses, config, predicted_struct_cls=Scalar)
 
-    for i, (arg, default_value_ast) in enumerate(reversed(list(zip_longest(reversed(ast.args),
-                                                                           reversed(ast.defaults)))), start=1):
+    for i, (arg, default_value_ast) in enumerate(
+        reversed(list(zip_longest(reversed(ast.args), reversed(ast.defaults)))), start=1
+    ):
         has_default_value = bool(default_value_ast)
         if has_default_value:
             default_rtype, default_struct = visit_expr(
-                default_value_ast, Context(predicted_struct=Unknown()), macroses, config)
+                default_value_ast, Context(predicted_struct=Unknown()), macroses, config
+            )
         else:
             default_rtype = Unknown(linenos=[arg.lineno])
         default_rtype.constant = False
-        default_rtype.label = 'argument "{0}"'.format(arg.name) if has_default_value else 'argument #{0}'.format(i)
+        default_rtype.label = (
+            'argument "{0}"'.format(arg.name)
+            if has_default_value
+            else "argument #{0}".format(i)
+        )
         if arg.name in body_struct:
-            default_rtype = merge(default_rtype, body_struct[arg.name])  # just to make sure
+            default_rtype = merge(
+                default_rtype, body_struct[arg.name]
+            )  # just to make sure
         default_rtype.linenos = [ast.lineno]
         if has_default_value:
             kwargs.append((arg.name, default_rtype))
