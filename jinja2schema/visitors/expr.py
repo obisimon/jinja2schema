@@ -626,6 +626,19 @@ def visit_call(ast, ctx, macroses=None, config=default_config):
                 )
                 struct = merge(struct, arg_struct)
             return List(String()), struct
+        if ast.node.attr == "get":
+            ctx.meet(Unknown(), ast)
+            rtype, struct = visit_expr(
+                ast.node.node,
+                Context(
+                    predicted_struct=Dictionary.from_ast(
+                        ast.node.node, order_nr=config.ORDER_OBJECT.get_next()
+                    )
+                ),
+                macroses,
+                config=config,
+            )
+            return List(Unknown()), struct
         raise InvalidExpression(
             ast, '"{0}" call is not supported'.format(ast.node.attr)
         )
